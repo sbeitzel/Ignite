@@ -49,6 +49,9 @@ final class PublishingContext {
     /// The directory containing their final, built website.
     var buildDirectory: URL
 
+    /// Which publishing diagnostics should be emitted to the console.
+    let logOptions: PublishingLogOptions
+
     /// Path at which content renders. Defaults to nil.
     public var currentRenderingPath: String?
 
@@ -86,8 +89,14 @@ final class PublishingContext {
     ///   - file: One file from the user's package.
     ///   - buildDirectoryPath: The path where the artifacts are generated.
     ///   The default is "Build".
-    private init(for site: any Site, from file: StaticString, buildDirectoryPath: String = "Build") throws {
+    private init(
+        for site: any Site,
+        from file: StaticString,
+        buildDirectoryPath: String = "Build",
+        logOptions: PublishingLogOptions = .standard
+    ) throws {
         self.site = site
+        self.logOptions = logOptions
 
         let sourceBuildDirectories = try URL.selectDirectories(from: file)
         sourceDirectory = sourceBuildDirectories.source
@@ -97,6 +106,31 @@ final class PublishingContext {
         fontsDirectory = sourceDirectory.appending(path: "Fonts")
         contentDirectory = sourceDirectory.appending(path: "Content")
         includesDirectory = sourceDirectory.appending(path: "Includes")
+    }
+
+    /// Creates a new publishing context with explicit source and build directories.
+    /// Use this when embedding Ignite in an app target where Package.swift doesn't exist.
+    /// - Parameters:
+    ///   - site: The site we're currently publishing.
+    ///   - sourceDirectory: The root directory containing Assets, Content, and Includes folders.
+    ///   - buildDirectory: The directory where the generated site will be written.
+    private init(
+        for site: any Site,
+        sourceDirectory: URL,
+        buildDirectory: URL,
+        logOptions: PublishingLogOptions = .standard
+    ) throws {
+        self.site = site
+        self.logOptions = logOptions
+
+        let sourceBuildDirectories = try URL.makeDirectories(source: sourceDirectory, build: buildDirectory)
+        self.sourceDirectory = sourceBuildDirectories.source
+        self.buildDirectory = sourceBuildDirectories.build
+
+        assetsDirectory = self.sourceDirectory.appending(path: "Assets")
+        fontsDirectory = self.sourceDirectory.appending(path: "Fonts")
+        contentDirectory = self.sourceDirectory.appending(path: "Content")
+        includesDirectory = self.sourceDirectory.appending(path: "Includes")
     }
 
     /// Creates and sets the shared instance of `PublishingContext`
@@ -110,9 +144,39 @@ final class PublishingContext {
     static func initialize(
         for site: any Site,
         from file: StaticString,
-        buildDirectoryPath: String = "Build"
+        buildDirectoryPath: String = "Build",
+        logOptions: PublishingLogOptions = .standard
     ) throws -> PublishingContext {
-        let context = try PublishingContext(for: site, from: file, buildDirectoryPath: buildDirectoryPath)
+        let context = try PublishingContext(
+            for: site,
+            from: file,
+            buildDirectoryPath: buildDirectoryPath,
+            logOptions: logOptions
+        )
+        sharedContext = context
+        return context
+    }
+
+    /// Creates and sets the shared instance of `PublishingContext` with explicit directories.
+    /// Use this when embedding Ignite in an app target where Package.swift doesn't exist.
+    /// - Parameters:
+    ///   - site: The site we're currently publishing.
+    ///   - sourceDirectory: The root directory containing Assets, Content, and Includes folders.
+    ///   - buildDirectory: The directory where the generated site will be written.
+    /// - Returns: The shared `PublishingContext` instance.
+    @discardableResult
+    static func initialize(
+        for site: any Site,
+        sourceDirectory: URL,
+        buildDirectory: URL,
+        logOptions: PublishingLogOptions = .standard
+    ) throws -> PublishingContext {
+        let context = try PublishingContext(
+            for: site,
+            sourceDirectory: sourceDirectory,
+            buildDirectory: buildDirectory,
+            logOptions: logOptions
+        )
         sharedContext = context
         return context
     }
@@ -132,14 +196,56 @@ final class PublishingContext {
     /// Converts a URL to a site-relative path string.
     /// - Parameter url: The URL to convert.
     /// - Returns: A string path, either preserving remote URLs or
-    /// making local URLs relative to the site root.
+    /// making local URLs relative to the site root. When `site.useRelativePaths`
+    /// is true, local paths will have their leading slash removed.
     func path(for url: URL) -> String {
         let path = url.relativeString
-        return if url.isFileURL {
+        var result = if url.isFileURL {
             site.url.appending(path: path).decodedPath
         } else {
             path
         }
+
+        if site.useRelativePaths, result.hasPrefix("/") {
+            result = String(result.dropFirst())
+        }
+
+        return result
+    }
+
+    /// Returns a path with a trailing slash appended for local page URLs.
+    /// Static hosts serve directory-style pages (path/index.html) at path/,
+    /// so links should use the canonical form to avoid 301 redirects.
+    func linkPath(for url: URL) -> String {
+        var result = path(for: url)
+
+        let isExternal = url.scheme == "http" || url.scheme == "https" || url.scheme == "mailto"
+        if !isExternal,
+           !result.hasSuffix("/"),
+           !result.hasPrefix("#") {
+            let lastComponent = result.split(separator: "/").last.map(String.init) ?? ""
+            if !lastComponent.contains(".") {
+                result += "/"
+            }
+        }
+
+        return result
+    }
+
+    /// Converts a path string to a site-relative path, prepending the site's
+    /// subpath if needed and respecting the `useRelativePaths` setting.
+    /// - Parameter path: A path string, typically starting with "/" for local assets.
+    /// - Returns: The resolved path. For subsites, includes the subsite path prefix.
+    /// When `useRelativePaths` is true, the leading slash is removed.
+    func assetPath(_ path: String) -> String {
+        let basePath = path.hasPrefix("/") ? site.url.path : ""
+        var fullPath = "\(basePath)\(path)"
+
+        if site.useRelativePaths, fullPath.hasPrefix("/") {
+            fullPath = String(fullPath.dropFirst())
+        }
+
+        return fullPath
     }
 
     /// Adds a warning during a site build.
@@ -152,6 +258,11 @@ final class PublishingContext {
     /// - Parameter error: The error to add.
     func addError(_ error: PublishingError) {
         errors.append(error)
+    }
+
+    /// Returns whether a specific class of publishing diagnostics should be logged.
+    func shouldLog(_ option: PublishingLogOptions) -> Bool {
+        logOptions.contains(option)
     }
 
     /// Adds one path to the sitemap.

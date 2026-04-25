@@ -84,4 +84,121 @@ class MediaQueryTests: IgniteTestSuite {
         let output = query.condition
         #expect(output == css)
     }
+
+    // MARK: - Custom breakpoints
+
+    @Test("Custom breakpoint produces correct condition")
+    func customBreakpointCondition() async throws {
+        let query = BreakpointQuery.custom(.px(800))
+        #expect(query.condition == "min-width: 800px")
+    }
+
+    @Test("Custom breakpoint with rem unit")
+    func customBreakpointRem() async throws {
+        let query = BreakpointQuery.custom(.rem(50))
+        #expect(query.condition == "min-width: 50.0rem")
+    }
+
+    // MARK: - Equality
+
+    @Test("Equal breakpoint queries are equal")
+    func breakpointQueryEquality() async throws {
+        #expect(BreakpointQuery.small == BreakpointQuery.small)
+        #expect(BreakpointQuery.custom(.px(800)) == BreakpointQuery.custom(.px(800)))
+    }
+
+    @Test("Different breakpoint queries are not equal")
+    func breakpointQueryInequality() async throws {
+        #expect(BreakpointQuery.small != BreakpointQuery.medium)
+        #expect(BreakpointQuery.custom(.px(800)) != BreakpointQuery.custom(.px(900)))
+    }
+
+    @Test("Equal theme queries are equal")
+    func themeQueryEquality() async throws {
+        let a = ThemeQuery(DefaultDarkTheme.self)
+        let b = ThemeQuery(DefaultDarkTheme.self)
+        #expect(a == b)
+    }
+
+    @Test("Different theme queries are not equal")
+    func themeQueryInequality() async throws {
+        let dark = ThemeQuery(DefaultDarkTheme.self)
+        let light = ThemeQuery(DefaultLightTheme.self)
+        #expect(dark != light)
+    }
+
+    // MARK: - Hashable
+
+    @Test("Equal theme queries hash equally")
+    func themeQueryHashable() async throws {
+        let a = ThemeQuery(DefaultDarkTheme.self)
+        let b = ThemeQuery(DefaultDarkTheme.self)
+        #expect(a.hashValue == b.hashValue)
+    }
+
+    // MARK: - BreakpointQuery init from Breakpoint
+
+    @Test("init from Breakpoint maps correctly")
+    func breakpointQueryInitFromBreakpoint() async throws {
+        let query = BreakpointQuery(.medium)
+        #expect(query != nil)
+        #expect(query?.condition == "min-width: 768px")
+    }
+
+    // MARK: - CSS MediaQuery render output
+
+    @Test("CSS MediaQuery single feature renders with @media wrapper")
+    func cssMediaQuerySingleFeature() async throws {
+        let query = MediaQuery(ColorSchemeQuery.dark) {
+            Ruleset(.class("test"), styles: [InlineStyle(.opacity, value: "0.5")])
+        }
+
+        let output = query.render()
+        #expect(output.contains("@media (prefers-color-scheme: dark)"))
+        #expect(output.contains("opacity: 0.5"))
+    }
+
+    @Test("CSS MediaQuery and combinator joins features")
+    func cssMediaQueryAndCombinator() async throws {
+        let query = MediaQuery(ColorSchemeQuery.dark, BreakpointQuery.medium, combinator: .and) {
+            Ruleset(.class("test"), styles: [InlineStyle(.opacity, value: "1")])
+        }
+
+        let output = query.render()
+        #expect(output.contains("@media (prefers-color-scheme: dark) and (min-width: 768px)"))
+    }
+
+    @Test("CSS MediaQuery or combinator joins features")
+    func cssMediaQueryOrCombinator() async throws {
+        let query = MediaQuery(ColorSchemeQuery.dark, BreakpointQuery.medium, combinator: .or) {
+            Ruleset(.class("test"), styles: [InlineStyle(.opacity, value: "1")])
+        }
+
+        let output = query.render()
+        #expect(output.contains("@media (prefers-color-scheme: dark) or (min-width: 768px)"))
+    }
+
+    @Test("CSS MediaQuery array initializer matches variadic initializer")
+    func cssMediaQueryArrayInitializerParity() async throws {
+        let features: [MediaFeature] = [ColorSchemeQuery.dark, BreakpointQuery.medium]
+
+        let variadicQuery = MediaQuery(ColorSchemeQuery.dark, BreakpointQuery.medium) {
+            Ruleset(.class("a"), styles: [])
+        }
+
+        let arrayQuery = MediaQuery(features) {
+            Ruleset(.class("a"), styles: [])
+        }
+
+        #expect(variadicQuery.render() == arrayQuery.render())
+    }
+
+    @Test("CSS MediaQuery description matches render output")
+    func cssMediaQueryDescriptionMatchesRender() async throws {
+        let query = MediaQuery(ColorSchemeQuery.dark) {
+            Ruleset(.class("x"), styles: [InlineStyle(.color, value: "red")])
+        }
+
+        #expect(query.description == query.render())
+    }
 }

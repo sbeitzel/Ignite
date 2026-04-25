@@ -20,7 +20,7 @@ class SubsiteTests: IgniteSubsiteTestSuite {
     func named(path: String, description: String) async throws {
         let element = Image(path, description: description)
         let output = element.markupString()
-        let path = publishingContext.path(for: URL(string: path)!)
+        let path = publishingContext.assetPath(path)
         #expect(output == "<img src=\"\(path)\" alt=\"Example image\" />")
     }
 
@@ -78,7 +78,7 @@ class SubsiteTests: IgniteSubsiteTestSuite {
         let page = TestSubsitePage()
         let element = Link("This is a test", target: page).linkStyle(.button)
         let output = element.markupString()
-        #expect(output == "<a href=\"\(page.path)\" class=\"btn btn-primary\">This is a test</a>")
+        #expect(output == "<a href=\"\(page.path)/\" class=\"btn btn-primary\">This is a test</a>")
     }
 
     @Test("Page Content Test")
@@ -90,6 +90,6 @@ class SubsiteTests: IgniteSubsiteTestSuite {
         }
         let output = element.markupString()
 
-        #expect(output == "<a href=\"\(page.path)\" class=\"link-plain d-inline-block\">MORE <p>CONTENT</p></a>")
+        #expect(output == "<a href=\"\(page.path)/\" class=\"link-plain d-inline-block\">MORE <p>CONTENT</p></a>")
     }
 }
